@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Month / Date Facts agent — notable intellectuals, birthplace context, regional history, and education traditions." />
   <title>Month / Date Facts</title>
+  <meta name="app-version" content="2026-09-13-functional-filters-v3" />
   <style>
     :root{
       --ink:#2f3a3d;
@@ -133,7 +134,15 @@
         <div class="eyebrow">History · People · Place · Learning</div>
         <h1 id="welcomeTitle">Welcome to <span>Month / Date</span> Facts</h1>
         <p class="hero-copy">Choose a birth month and date. The agent finds notable intellectuals born that day, identifies birth regions, and retrieves historical and educational context around their period.</p>
-        <div class="mini-orbit" id="categoryFilters"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="scientists">Scientists</button><button type="button" data-filter="writers">Writers</button><button type="button" data-filter="philosophers">Philosophers</button><button type="button" data-filter="inventors">Inventors</button><button type="button" data-filter="educators">Educators</button><button type="button" data-filter="artists">Artists & architects</button></div>
+        <div class="mini-orbit" id="categoryFilters" aria-label="Filter people by category">
+          <button type="button" data-filter="all" class="active" aria-pressed="true">All</button>
+          <button type="button" data-filter="scientists" aria-pressed="false">Scientists</button>
+          <button type="button" data-filter="writers" aria-pressed="false">Writers</button>
+          <button type="button" data-filter="philosophers" aria-pressed="false">Philosophers</button>
+          <button type="button" data-filter="inventors" aria-pressed="false">Inventors</button>
+          <button type="button" data-filter="educators" aria-pressed="false">Educators</button>
+          <button type="button" data-filter="artists" aria-pressed="false">Artists & architects</button>
+        </div>
       </div>
 
       <form class="input-card" id="dateForm">
@@ -270,7 +279,7 @@
 
   function setActiveFilter(category){
     activeFilter = category;
-    filterButtons.forEach(b => b.classList.toggle('active', b.dataset.filter===category));
+    filterButtons.forEach(b => { const on=b.dataset.filter===category; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
   }
 
   const intellectualTerms = [
@@ -469,23 +478,33 @@
 
   form.addEventListener('submit', e=>{e.preventDefault(); run();});
 
-  filterButtons.forEach(button => button.addEventListener('click', async () => {
-    const category = button.dataset.filter || 'all';
+  async function applyCategory(category, button){
     setActiveFilter(category);
     contextSection.classList.add('hidden');
+    setStatus(`Finding ${category==='all' ? 'all notable people' : (button?.textContent || category).toLowerCase()} born on this date…`, true);
+
     if(!allBirths.length || !lastSearch){
       await run();
       return;
     }
+
     const {mm,dd,anchor,span} = lastSearch;
     const ranked = rankPeople(allBirths,anchor,span,category);
     renderPeople(ranked,mm,dd,anchor,span,category);
     window.__dateFactsPeople = ranked;
     peopleSection.classList.remove('hidden');
     askSection.classList.remove('hidden');
-    setStatus(ranked.length ? `${ranked.length} matching people ready.` : `No matching ${button.textContent.toLowerCase()} found for this date.`, false);
+    setStatus(ranked.length ? `${ranked.length} matching people ready.` : `No matching ${button?.textContent?.toLowerCase() || category} found for this date.`, false);
     peopleSection.scrollIntoView({behavior:'smooth',block:'start'});
-  }));
+  }
+
+  filterButtons.forEach(button => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      applyCategory(button.dataset.filter || 'all', button);
+    });
+  });
 
   askBtn.addEventListener('click', async()=>{
     const q=askInput.value.trim(); if(!q) return;
