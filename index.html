@@ -52,7 +52,7 @@
     h1 span{color:var(--accent2)}
     .hero-copy{font-size:17px;line-height:1.65;color:var(--muted);max-width:650px;position:relative;z-index:2}
     .mini-orbit{display:flex;gap:9px;margin-top:30px;position:relative;z-index:2;flex-wrap:wrap}
-    .mini-orbit span{padding:8px 12px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:rgba(255,255,255,.72)}
+    .mini-orbit button{padding:8px 12px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:rgba(255,255,255,.72);color:var(--ink);cursor:pointer;transition:.18s ease}.mini-orbit button:hover{background:var(--mint);transform:translateY(-1px)}.mini-orbit button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
     .input-card{border-radius:30px;padding:28px;display:flex;flex-direction:column;justify-content:center}
     .input-card h2,.section-title{font-family:Georgia,"Times New Roman",serif;font-weight:500;letter-spacing:-.03em}
     .input-card h2{font-size:30px;margin:0 0 8px}
@@ -133,7 +133,7 @@
         <div class="eyebrow">History · People · Place · Learning</div>
         <h1 id="welcomeTitle">Welcome to <span>Month / Date</span> Facts</h1>
         <p class="hero-copy">Choose a birth month and date. The agent finds notable intellectuals born that day, identifies birth regions, and retrieves historical and educational context around their period.</p>
-        <div class="mini-orbit"><span>Scientists</span><span>Writers</span><span>Philosophers</span><span>Inventors</span><span>Educators</span><span>Artists & architects</span></div>
+        <div class="mini-orbit" id="categoryFilters"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="scientists">Scientists</button><button type="button" data-filter="writers">Writers</button><button type="button" data-filter="philosophers">Philosophers</button><button type="button" data-filter="inventors">Inventors</button><button type="button" data-filter="educators">Educators</button><button type="button" data-filter="artists">Artists & architects</button></div>
       </div>
 
       <form class="input-card" id="dateForm">
@@ -195,6 +195,10 @@
   const askBtn = document.querySelector('#askBtn');
   const askInput = document.querySelector('#askInput');
   const answerBox = document.querySelector('#answerBox');
+  const filterButtons = [...document.querySelectorAll('#categoryFilters [data-filter]')];
+  let activeFilter = 'all';
+  let allBirths = [];
+  let lastSearch = null;
 
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   monthNames.forEach((m,i) => monthEl.add(new Option(m, String(i+1).padStart(2,'0'))));
@@ -248,6 +252,27 @@
     throw last || new Error('Birthday feed unavailable');
   }
 
+
+  const categoryTerms = {
+    scientists:['scientist','physicist','chemist','biologist','mathematician','astronomer','geologist','botanist','zoologist','computer scientist','researcher','physician','doctor','naturalist'],
+    writers:['writer','author','poet','novelist','essayist','playwright','journalist','historian','biographer','literary'],
+    philosophers:['philosopher','philosophy','theologian','ethicist','political theorist','thinker','logician'],
+    inventors:['inventor','engineer','engineered','pioneer','entrepreneur','technologist','designer','patent'],
+    educators:['educator','teacher','professor','academic','scholar','pedagogue','educationist','lecturer','university'],
+    artists:['artist','painter','architect','sculptor','composer','musician','photographer','filmmaker','designer','illustrator']
+  };
+
+  function matchesCategory(person, category){
+    if(!category || category==='all') return true;
+    const hay = `${person.title} ${person.text||''} ${person.desc||''}`.toLowerCase();
+    return (categoryTerms[category] || []).some(term => hay.includes(term));
+  }
+
+  function setActiveFilter(category){
+    activeFilter = category;
+    filterButtons.forEach(b => b.classList.toggle('active', b.dataset.filter===category));
+  }
+
   const intellectualTerms = [
     'scientist','physicist','chemist','biologist','mathematician','philosopher','writer','author','poet','historian','economist','scholar','professor','educator','inventor','engineer','physician','doctor','architect','astronomer','geologist','anthropologist','sociologist','psychologist','linguist','academic','researcher','composer','artist','painter','naturalist','theologian','jurist','computer scientist','political scientist','botanist','zoologist','archaeologist'
   ];
@@ -272,14 +297,14 @@
     return parts.length > 1 ? parts[1].split(',')[0].trim() : plain.split(',')[0].trim();
   }
 
-  function rankPeople(items, anchor, span){
-    let filtered = items.filter(x => x.score > 0);
+  function rankPeople(items, anchor, span, category='all'){
+    let filtered = items.filter(x => x.score > 0 && matchesCategory(x, category));
     if(anchor){
       const inWindow = filtered.filter(x => Number.isFinite(x.year) && Math.abs(x.year-anchor) <= span);
       if(inWindow.length >= 3) filtered = inWindow;
       filtered.sort((a,b) => (Math.abs(a.year-anchor)-Math.abs(b.year-anchor)) || b.score-a.score);
     } else filtered.sort((a,b)=>b.score-a.score || b.year-a.year);
-    if(filtered.length < 6){
+    if(category==='all' && filtered.length < 6){
       const extras = items.filter(x=>!filtered.includes(x)).sort((a,b)=>b.score-a.score);
       filtered.push(...extras.slice(0, 6-filtered.length));
     }
@@ -288,10 +313,11 @@
 
   function initials(name){ return name.split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
 
-  function renderPeople(items, mm, dd, anchor, span){
+  function renderPeople(items, mm, dd, anchor, span, category='all'){
     const label = `${monthNames[Number(mm)-1]} ${Number(dd)}`;
-    peopleTitle.textContent = `Born on ${label}`;
-    peopleSub.textContent = anchor ? `Focused around ${anchor} ± ${span} years; intellectual and creative figures are ranked first.` : 'Intellectual and creative figures are ranked first from the live birthday feed.';
+    const categoryLabel = category==='all' ? '' : ` · ${filterButtons.find(b=>b.dataset.filter===category)?.textContent || category}`;
+    peopleTitle.textContent = `Born on ${label}${categoryLabel}`;
+    peopleSub.textContent = anchor ? `Focused around ${anchor} ± ${span} years.` : (category==='all' ? 'Intellectual and creative figures are ranked first from the live birthday feed.' : 'Filtered from the live birthday feed.');
     if(!items.length){ peopleGrid.innerHTML = `<div class="empty">No suitable records returned for this date.</div>`; return; }
     peopleGrid.innerHTML = items.map((p,i)=>`
       <article class="person-card">
@@ -425,8 +451,10 @@
       const data=await onThisDay(mm,dd);
       setStatus('Ranking intellectual, scientific, literary, and creative figures…',true);
       const all=normalizeBirths(data);
-      const ranked=rankPeople(all,anchor,span);
-      renderPeople(ranked,mm,dd,anchor,span);
+      allBirths = all;
+      lastSearch = {mm,dd,anchor,span};
+      const ranked=rankPeople(all,anchor,span,activeFilter);
+      renderPeople(ranked,mm,dd,anchor,span,activeFilter);
       window.__dateFactsPeople=ranked;
       peopleSection.classList.remove('hidden'); askSection.classList.remove('hidden');
       setStatus(`${ranked.length} people ready. Select any person for place and pedagogy.`,false);
@@ -440,6 +468,24 @@
   }
 
   form.addEventListener('submit', e=>{e.preventDefault(); run();});
+
+  filterButtons.forEach(button => button.addEventListener('click', async () => {
+    const category = button.dataset.filter || 'all';
+    setActiveFilter(category);
+    contextSection.classList.add('hidden');
+    if(!allBirths.length || !lastSearch){
+      await run();
+      return;
+    }
+    const {mm,dd,anchor,span} = lastSearch;
+    const ranked = rankPeople(allBirths,anchor,span,category);
+    renderPeople(ranked,mm,dd,anchor,span,category);
+    window.__dateFactsPeople = ranked;
+    peopleSection.classList.remove('hidden');
+    askSection.classList.remove('hidden');
+    setStatus(ranked.length ? `${ranked.length} matching people ready.` : `No matching ${button.textContent.toLowerCase()} found for this date.`, false);
+    peopleSection.scrollIntoView({behavior:'smooth',block:'start'});
+  }));
 
   askBtn.addEventListener('click', async()=>{
     const q=askInput.value.trim(); if(!q) return;
