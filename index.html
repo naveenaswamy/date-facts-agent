@@ -120,6 +120,40 @@
     .error{color:var(--danger)}
     @media(max-width:900px){.hero,.context-layout{grid-template-columns:1fr}.people-grid{grid-template-columns:repeat(2,1fr)}.section-sub{text-align:left}.hero-card{padding:34px}.evidence{grid-template-columns:1fr}}
     @media(max-width:620px){.shell{width:min(100% - 20px,1180px);padding-top:16px}.topbar{margin-bottom:20px}.source-pill{display:none}.hero-card{padding:28px;min-height:auto;border-radius:26px}h1{font-size:48px}.input-card{border-radius:24px}.grid2,.people-grid,.ask{grid-template-columns:1fr}.section-head{align-items:start;flex-direction:column}.section-sub{text-align:left}.panel{padding:18px}.ask button{width:100%}}
+    /* Voice guide (ElevenLabs), inside the Explore card */
+    .voice-modal{width:min(420px,calc(100% - 32px));border:0;border-radius:30px;padding:36px 30px 28px;text-align:center;color:var(--ink);background:var(--paper);box-shadow:0 30px 80px rgba(40,55,55,.25)}
+    .voice-modal::backdrop{background:rgba(47,58,61,.35);backdrop-filter:blur(4px)}
+    .voice-modal[open]{animation:voicepop .25s ease-out}
+    .voice-modal[open]::backdrop{animation:voicefade .25s ease-out}
+    @keyframes voicepop{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+    @keyframes voicefade{from{opacity:0}to{opacity:1}}
+    .voice-close{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}
+    .voice-close:hover{background:var(--mint);color:var(--ink)}
+    .voice-hero{width:84px;height:84px;object-fit:contain;border-radius:50%;background:#fff;padding:8px;box-shadow:0 10px 26px rgba(70,90,90,.14);margin:0 auto 14px;display:block}
+    .voice-modal h3{font-family:Georgia,"Times New Roman",serif;font-weight:500;letter-spacing:-.02em;font-size:26px;margin:0 0 6px}
+    .voice-modal .voice-btn:not(.live){background:var(--accent);color:#fff}
+    .voice-modal .voice-btn:not(.live):hover{background:#476059}
+    .voice-modal p{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 20px}
+    .voice-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 18px;border-radius:999px;border:1.5px solid var(--accent);background:rgba(255,255,255,.85);color:var(--accent);font-weight:650;font-size:15px;cursor:pointer;transition:transform .18s ease,background .18s ease,color .18s ease}
+    .voice-btn:hover{transform:translateY(-1px);background:var(--mint)}
+    .voice-btn:disabled{opacity:.7;cursor:wait;transform:none}
+    .voice-btn .mic{width:38px;height:38px;border-radius:50%;background:#fff;display:grid;place-items:center;position:relative;box-shadow:0 0 0 1px var(--line)}
+    .voice-btn .mic img{width:30px;height:30px;object-fit:contain;border-radius:50%}
+    .voice-btn.live{background:var(--accent2);border-color:var(--accent2);color:#fff}
+    .voice-btn.live .mic{background:#fff}
+    .voice-btn.live .mic:after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid rgba(255,255,255,.55);animation:voicering 1.6s ease-out infinite}
+    .voice-btn.speaking .mic:after{animation-duration:.8s}
+    @keyframes voicering{from{transform:scale(.85);opacity:1}to{transform:scale(1.35);opacity:0}}
+    .input-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px}
+    .input-card .input-head h2{margin:0}
+    .voice-icon-btn{flex:none;width:52px;height:52px;padding:0;border-radius:50%;border:1px solid var(--line);background:#fff;display:grid;place-items:center;cursor:pointer;position:relative;box-shadow:0 8px 20px rgba(70,90,90,.12);transition:transform .18s ease}
+    .voice-icon-btn:hover{transform:translateY(-1px) scale(1.04)}
+    .voice-icon-btn img{width:36px;height:36px;object-fit:contain;border-radius:50%}
+    .voice-icon-btn.live{border-color:var(--accent2)}
+    .voice-icon-btn.live:after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--accent2);animation:voicering 1.6s ease-out infinite}
+    .voice-icon-btn.speaking:after{animation-duration:.8s}
+    .voice-status{margin-top:8px;font-size:12px;color:var(--muted);min-height:16px}
+    .voice-status.error{color:var(--danger)}
   </style>
 </head>
 <body>
@@ -146,7 +180,7 @@
       </div>
 
       <form class="input-card" id="dateForm">
-        <h2>Explore your date</h2>
+        <div class="input-head"><h2>Explore your date</h2><button type="button" class="voice-icon-btn" id="voiceIconBtn" aria-label="Prefer to chat? Open the Date Guide" title="Prefer to chat?" aria-expanded="false" aria-controls="voicePanel" aria-haspopup="dialog"><img src="data:image/png;base64,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" alt=""></button></div>
         <p>No birth year is required. Add a historical lens only if you want the results focused around a period.</p>
         <div class="grid2">
           <div class="field"><label for="month">Birth month</label><select id="month" required></select></div>
@@ -159,6 +193,7 @@
         <button class="primary" id="exploreBtn" type="submit">Find people & history</button>
       </form>
     </section>
+
 
     <div class="agent-card" id="agentStatus"><span class="pulse"></span><span id="agentText">Agent is retrieving live sources…</span></div>
 
@@ -182,6 +217,18 @@
 
     <footer class="footer">Historical content is retrieved from Wikimedia projects. The agent displays source-linked material and avoids inventing missing regional or educational facts.</footer>
   </main>
+
+  <dialog class="voice-modal" id="voicePanel" aria-labelledby="voiceTitle">
+    <button type="button" class="voice-close" id="voiceClose" aria-label="Close">&times;</button>
+    <img class="voice-hero" src="data:image/png;base64,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" alt="">
+    <h3 id="voiceTitle">Prefer to chat?</h3>
+    <p>Say a date out loud and the Date Guide will tell you who was born that day. Your browser will ask to use the microphone.</p>
+    <button type="button" class="voice-btn" id="voiceBtn" aria-pressed="false" aria-describedby="voiceTitle">
+            <span class="mic" aria-hidden="true"><img src="data:image/png;base64,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" alt=""></span>
+            <span id="voiceLabel">Talk to the Date Guide</span>
+          </button>
+    <div class="voice-status" id="voiceStatus" role="status" aria-live="polite"></div>
+  </dialog>
 
 <script>
 (() => {
@@ -523,6 +570,100 @@
 })();
 </script>
 
-   <elevenlabs-convai agent-id="agent_6901m5wt6k0ffwy98rskqz6c6v7b" placement="top" action-text="Ask about any date" start-call-text="Talk to the Date Guide"></elevenlabs-convai>  <script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>
-  </body>
+  
+<!-- Date Guide voice button (ElevenLabs Agents) -->
+<script type="module">
+  import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client/+esm';
+
+  const AGENT_ID = 'agent_6901m5wt6k0ffwy98rskqz6c6v7b';
+  const btn = document.getElementById('voiceBtn');
+  const iconBtn = document.getElementById('voiceIconBtn');
+  const sync = () => { if (!iconBtn) return; ['live','speaking'].forEach(c => iconBtn.classList.toggle(c, btn.classList.contains(c))); };
+  new MutationObserver(sync).observe(btn, { attributes: true, attributeFilter: ['class', 'disabled'] });
+  const label = document.getElementById('voiceLabel');
+  const statusEl = document.getElementById('voiceStatus');
+  let conversation = null;
+
+  const setStatus = (text, isError = false) => {
+    statusEl.textContent = text;
+    statusEl.classList.toggle('error', isError);
+  };
+
+  const setIdle = () => {
+    conversation = null;
+    btn.disabled = false;
+    btn.classList.remove('live', 'speaking');
+    btn.setAttribute('aria-pressed', 'false');
+    label.textContent = 'Talk to the Date Guide';
+  };
+
+  const selectedDate = () => {
+    const m = document.getElementById('month');
+    const d = document.getElementById('day');
+    if (!m || !d || !m.value || !d.value) return '';
+    return `${m.options[m.selectedIndex].text} ${Number(d.value)}`;
+  };
+
+  async function start() {
+    btn.disabled = true;
+    label.textContent = 'Connecting…';
+    setStatus('');
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      conversation = await Conversation.startSession({
+        agentId: AGENT_ID,
+        connectionType: 'websocket',
+        onConnect: () => {
+          btn.disabled = false;
+          btn.classList.add('live');
+          btn.setAttribute('aria-pressed', 'true');
+          label.textContent = 'End conversation';
+          setStatus('Listening… ask about any date.');
+        },
+        onDisconnect: () => { setIdle(); setStatus('Conversation ended. Click to talk again.'); },
+        onError: (err) => { console.error(err); setStatus('Something went wrong. Please try again.', true); },
+        onModeChange: ({ mode }) => {
+          const speaking = mode === 'speaking';
+          btn.classList.toggle('speaking', speaking);
+          setStatus(speaking ? 'The Date Guide is speaking…' : 'Listening…');
+        },
+      });
+      // Let the guide know which date is selected on the page (if supported).
+      const date = selectedDate();
+      if (date && conversation && typeof conversation.sendContextualUpdate === 'function') {
+        conversation.sendContextualUpdate(`The visitor currently has ${date} selected on the page.`);
+      }
+    } catch (err) {
+      console.error(err);
+      setIdle();
+      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      setStatus(denied
+        ? 'Microphone access is blocked. Allow it in your browser settings and try again.'
+        : 'Could not start the conversation. Please try again.', true);
+    }
+  }
+
+  async function stop() {
+    btn.disabled = true;
+    label.textContent = 'Ending…';
+    try { await conversation.endSession(); } catch (e) { console.error(e); }
+    setIdle();
+    setStatus('Conversation ended. Click to talk again.');
+  }
+
+  btn.addEventListener('click', () => (conversation ? stop() : start()));
+  const panel = document.getElementById('voicePanel');
+  const closeBtn = document.getElementById('voiceClose');
+  const openPanel = () => { if (!panel.open) panel.showModal(); iconBtn && iconBtn.setAttribute('aria-expanded', 'true'); };
+  const closePanel = () => { if (panel.open) panel.close(); };
+  if (iconBtn) iconBtn.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(); }); // click outside the box
+  panel.addEventListener('close', () => {
+    iconBtn && iconBtn.setAttribute('aria-expanded', 'false');
+    if (conversation) stop(); // closing the pop-up ends the conversation
+  });
+  window.addEventListener('beforeunload', () => { if (conversation) conversation.endSession(); });
+</script>
+</body>
 </html>
