@@ -390,7 +390,7 @@
           </div>
         </div>
       </article>`).join('');
-    peopleGrid.querySelectorAll('[data-context]').forEach(el => el.addEventListener('click', () => exploreContext(items[Number(el.dataset.context)])));
+    peopleGrid.querySelectorAll('[data-context]').forEach(el => el.addEventListener('click', () => exploreContext(items[Number(el.dataset.context)]).catch(()=>{})));
   }
 
   async function wikidataEntity(qid){
@@ -491,14 +491,16 @@
           </div>
         </div>`;
       setStatus('Context ready.',false);
+      return {person, place, evidence, lensYear, century:c};
     }catch(err){
       contextContent.className='empty error';
       contextContent.textContent=`Could not retrieve regional context: ${err.message}`;
       setStatus('A source request failed.',false);
+      throw err;
     }
   }
 
-  async function run(){
+  async function run(opts={}){
     const mm=monthEl.value, dd=dayEl.value;
     const anchor=Number(yearEl.value)||0, span=Math.max(10,Number(windowEl.value)||100);
     btn.disabled=true; peopleSection.classList.add('hidden'); contextSection.classList.add('hidden'); askSection.classList.add('hidden');
@@ -515,15 +517,17 @@
       peopleSection.classList.remove('hidden'); askSection.classList.remove('hidden');
       setStatus(`${ranked.length} people ready. Select any person for place and pedagogy.`,false);
       peopleSection.scrollIntoView({behavior:'smooth',block:'start'});
-      if(ranked[0]) setTimeout(()=>exploreContext(ranked[0]),250);
+      if(ranked[0] && opts.autoContext!==false) setTimeout(()=>exploreContext(ranked[0]).catch(()=>{}),250);
+      return ranked;
     }catch(err){
       peopleSection.classList.remove('hidden');
       peopleGrid.innerHTML=`<div class="empty error">Unable to retrieve the live birthday feed: ${escapeHTML(err.message)}. Try again or check the browser network policy.</div>`;
       setStatus('Source request failed.',false);
+      throw err;
     }finally{btn.disabled=false;}
   }
 
-  form.addEventListener('submit', e=>{e.preventDefault(); run();});
+  form.addEventListener('submit', e=>{e.preventDefault(); run().catch(()=>{});});
 
   async function applyCategory(category, button){
     setActiveFilter(category);
@@ -531,7 +535,7 @@
     setStatus(`Finding ${category==='all' ? 'all notable people' : (button?.textContent || category).toLowerCase()} born on this date…`, true);
 
     if(!allBirths.length || !lastSearch){
-      await run();
+      await run().catch(()=>{});
       return;
     }
 
@@ -567,6 +571,46 @@
     }catch(err){answerBox.innerHTML=`<div class="empty error">Search failed: ${escapeHTML(err.message)}</div>`;setStatus('Search failed.',false);} finally{askBtn.disabled=false;}
   });
   askInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();askBtn.click();}});
+
+  /* ---- Retrieval API for the voice agent (ElevenLabs client tools) ---- */
+  const clip = (t, n=220) => { t = stripHTML(t||'').replace(/\s+/g,' ').trim(); return t.length>n ? t.slice(0,n-1)+'…' : t; };
+  function parseMonth(v){
+    if(v==null || v==='') return 0;
+    const n = Number(v); if(Number.isInteger(n) && n>=1 && n<=12) return n;
+    const s = String(v).trim().toLowerCase();
+    const i = monthNames.findIndex(m => m.toLowerCase().startsWith(s.slice(0,3)));
+    return i>=0 ? i+1 : 0;
+  }
+  async function voiceLookupDate(params={}){
+    const m = parseMonth(params.month), d = parseInt(params.day,10);
+    if(!m || !d) return 'ERROR: I need a month (1-12 or a name) and a day number.';
+    const max = new Date(2024,m,0).getDate();
+    if(d<1 || d>max) return `ERROR: ${monthNames[m-1]} has only ${max} days.`;
+    monthEl.value = String(m).padStart(2,'0'); populateDays();
+    dayEl.value = String(d).padStart(2,'0'); updateWelcome();
+    const y = parseInt(params.year,10);
+    yearEl.value = Number.isFinite(y) ? String(y) : '';
+    let ranked;
+    try { ranked = await run({autoContext:false}); }
+    catch(err){ return `ERROR: The Wikipedia birthday feed could not be reached (${err.message}). Tell the visitor and do not guess.`; }
+    if(!ranked || !ranked.length) return `No suitable people were found on Wikipedia for ${monthNames[m-1]} ${d}.`;
+    const lines = ranked.slice(0,8).map((p,i)=>`${i+1}. ${p.title} (born ${Number.isFinite(p.year)?p.year:'year unknown'}): ${clip(p.desc || p.text)}`);
+    return `People born on ${monthNames[m-1]} ${d}, from the live Wikipedia feed (these are now shown on the page):\n${lines.join('\n')}\nUse ONLY these facts. For birthplace and history of someone, call get_person_context with their name.`;
+  }
+  async function voicePersonContext(params={}){
+    const name = String(params.name||'').trim();
+    if(!name) return 'ERROR: I need the person\'s name.';
+    const key = name.toLowerCase();
+    const pool = allBirths.length ? allBirths : (window.__dateFactsPeople||[]);
+    const person = pool.find(p=>p.title.toLowerCase()===key) || pool.find(p=>p.title.toLowerCase().includes(key) || key.includes(p.title.toLowerCase())) || {title:name, year:NaN, qid:'', text:'', desc:''};
+    try{
+      const r = await exploreContext(person);
+      const where = [r.place.place, r.place.region, r.place.country].filter(x=>x && x!=='Unknown');
+      const ev = r.evidence.slice(0,5).map(e=>`- [${e.tag}] ${e.title}: ${clip(e.snippet,180)}`).join('\n');
+      return `${person.title}${Number.isFinite(person.year)?` (born ${person.year})`:''}. Birthplace: ${where.length?where.join(', '):'not found in Wikidata'}. Historical lens: ${r.century}.\nWikipedia sources (shown on the page):\n${ev || '- No specific sources found. Do not invent details.'}\nSummarize briefly using ONLY this information.`;
+    }catch(err){ return `ERROR: Could not retrieve context for ${name} (${err.message}). Do not guess.`; }
+  }
+  window.DateFacts = { lookupDate: voiceLookupDate, personContext: voicePersonContext };
 })();
 </script>
 
@@ -613,6 +657,20 @@
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
         connectionType: 'websocket',
+        clientTools: {
+          get_births_on_date: async (params) => {
+            setStatus('Looking up that date on Wikipedia…');
+            const result = await window.DateFacts.lookupDate(params);
+            setStatus(result.startsWith('ERROR') ? 'Lookup failed.' : 'Found results. They are on the page behind this box.');
+            return result;
+          },
+          get_person_context: async (params) => {
+            setStatus(`Looking up ${params && params.name ? params.name : 'that person'}…`);
+            const result = await window.DateFacts.personContext(params);
+            setStatus('Context retrieved.');
+            return result;
+          },
+        },
         onConnect: () => {
           btn.disabled = false;
           btn.classList.add('live');
@@ -631,7 +689,7 @@
       // Let the guide know which date is selected on the page (if supported).
       const date = selectedDate();
       if (date && conversation && typeof conversation.sendContextualUpdate === 'function') {
-        conversation.sendContextualUpdate(`The visitor currently has ${date} selected on the page.`);
+        conversation.sendContextualUpdate(`The visitor currently has ${date} selected on the page. If they ask about it, call get_births_on_date.`);
       }
     } catch (err) {
       console.error(err);
