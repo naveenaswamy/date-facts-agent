@@ -122,6 +122,11 @@
     @media(max-width:620px){.shell{width:min(100% - 20px,1180px);padding-top:16px}.topbar{margin-bottom:20px}.source-pill{display:none}.hero-card{padding:28px;min-height:auto;border-radius:26px}h1{font-size:48px}.input-card{border-radius:24px}.grid2,.people-grid,.ask{grid-template-columns:1fr}.section-head{align-items:start;flex-direction:column}.section-sub{text-align:left}.panel{padding:18px}.ask button{width:100%}}
     /* Voice guide (ElevenLabs), inside the Explore card */
     .voice-modal{width:min(420px,calc(100% - 32px));border:0;border-radius:30px;padding:36px 30px 28px;text-align:center;color:var(--ink);background:var(--paper);box-shadow:0 30px 80px rgba(40,55,55,.25)}
+    .voice-modal.docked{position:fixed;inset:auto 20px 20px auto;margin:0;width:min(340px,calc(100% - 32px));padding:18px 18px 16px;border-radius:24px;z-index:1000;box-shadow:0 18px 50px rgba(40,55,55,.22);animation:none}
+    .voice-modal.docked .voice-hero{width:48px;height:48px;padding:5px;margin-bottom:8px}
+    .voice-modal.docked h3{font-size:19px}
+    .voice-modal.docked p{display:none}
+    .voice-modal.docked .voice-close{top:10px;right:10px;width:30px;height:30px;font-size:18px}
     .voice-modal::backdrop{background:rgba(47,58,61,.35);backdrop-filter:blur(4px)}
     .voice-modal[open]{animation:voicepop .25s ease-out}
     .voice-modal[open]::backdrop{animation:voicefade .25s ease-out}
@@ -292,21 +297,37 @@
   const stripHTML = s => { const d=document.createElement('div'); d.innerHTML=s||''; return d.textContent||''; };
   const wikiUrl = title => `https://en.wikipedia.org/wiki/${encodeURIComponent(String(title).replace(/ /g,'_'))}`;
 
-  async function fetchJSON(url){
-    const r = await fetch(url, {headers:{'Accept':'application/json'}});
-    if(!r.ok) throw new Error(`Source returned ${r.status}`);
-    return r.json();
+  async function fetchJSON(url, ms=8000){
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), ms);
+    try{
+      const r = await fetch(url, {headers:{'Accept':'application/json'}, signal:ctl.signal});
+      if(!r.ok) throw new Error(`Source returned ${r.status}`);
+      return await r.json();
+    }catch(err){
+      if(err.name==='AbortError') throw new Error('Source took too long to respond');
+      throw err;
+    }finally{ clearTimeout(timer); }
   }
 
-  async function onThisDay(mm,dd){
-    const urls = [
-      `https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/births/${mm}/${dd}`,
-      `https://en.wikipedia.org/api/rest_v1/feed/onthisday/births/${mm}/${dd}`
-    ];
-    let last;
-    for(const url of urls){ try { return await fetchJSON(url); } catch(e){ last=e; } }
-    throw last || new Error('Birthday feed unavailable');
+  const feedCache = new Map();
+  function onThisDay(mm,dd){
+    const key = `${mm}/${dd}`;
+    if(feedCache.has(key)) return feedCache.get(key);
+    const job = (async () => {
+      const urls = [
+        `https://en.wikipedia.org/api/rest_v1/feed/onthisday/births/${mm}/${dd}`,
+        `https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/births/${mm}/${dd}`
+      ];
+      let last;
+      for(const url of urls){ try { return await fetchJSON(url, 5000); } catch(e){ last=e; } }
+      throw last || new Error('Birthday feed unavailable');
+    })();
+    feedCache.set(key, job);
+    job.catch(()=>feedCache.delete(key)); // retry next time if it failed
+    return job;
   }
+  const entityCache = new Map();
 
 
   const categoryTerms = {
@@ -395,9 +416,11 @@
 
   async function wikidataEntity(qid){
     if(!qid) return null;
-    const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&ids=${encodeURIComponent(qid)}&props=claims%7Clabels%7Cdescriptions&languages=en`;
-    const d = await fetchJSON(url);
-    return d.entities?.[qid] || null;
+    if(entityCache.has(qid)) return entityCache.get(qid);
+    const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&ids=${encodeURIComponent(qid)}&props=claims%7Clabels&languages=en`;
+    const job = fetchJSON(url, 6000).then(d => d.entities?.[qid] || null);
+    entityCache.set(qid, job); job.catch(()=>entityCache.delete(qid));
+    return job;
   }
 
   async function resolveBirthplace(person){
@@ -581,7 +604,13 @@
     const i = monthNames.findIndex(m => m.toLowerCase().startsWith(s.slice(0,3)));
     return i>=0 ? i+1 : 0;
   }
+  const withDeadline = (promise, ms, fallback) => Promise.race([promise, new Promise(res => setTimeout(() => res(fallback), ms))]);
+  const TOOL_BUDGET_MS = 12000;
   async function voiceLookupDate(params={}){
+    return withDeadline(lookupDateInner(params), TOOL_BUDGET_MS,
+      'ERROR: Wikipedia is responding slowly right now. Tell the visitor you are still loading and ask them to repeat the date in a moment, or use the Find people & history button. Do not guess names.');
+  }
+  async function lookupDateInner(params={}){
     const m = parseMonth(params.month), d = parseInt(params.day,10);
     if(!m || !d) return 'ERROR: I need a month (1-12 or a name) and a day number.';
     const max = new Date(2024,m,0).getDate();
@@ -598,6 +627,10 @@
     return `People born on ${monthNames[m-1]} ${d}, from the live Wikipedia feed (these are now shown on the page):\n${lines.join('\n')}\nUse ONLY these facts. For birthplace and history of someone, call get_person_context with their name.`;
   }
   async function voicePersonContext(params={}){
+    return withDeadline(personContextInner(params), TOOL_BUDGET_MS,
+      'ERROR: The birthplace lookup is taking too long. Offer the visitor the short facts you already have, and suggest the Explore context button on the page. Do not invent details.');
+  }
+  async function personContextInner(params={}){
     const name = String(params.name||'').trim();
     if(!name) return 'ERROR: I need the person\'s name.';
     const key = name.toLowerCase();
@@ -610,7 +643,10 @@
       return `${person.title}${Number.isFinite(person.year)?` (born ${person.year})`:''}. Birthplace: ${where.length?where.join(', '):'not found in Wikidata'}. Historical lens: ${r.century}.\nWikipedia sources (shown on the page):\n${ev || '- No specific sources found. Do not invent details.'}\nSummarize briefly using ONLY this information.`;
     }catch(err){ return `ERROR: Could not retrieve context for ${name} (${err.message}). Do not guess.`; }
   }
-  window.DateFacts = { lookupDate: voiceLookupDate, personContext: voicePersonContext };
+  function prefetchSelected(){ onThisDay(monthEl.value, dayEl.value).catch(()=>{}); }
+  monthEl.addEventListener('change', prefetchSelected);
+  dayEl.addEventListener('change', prefetchSelected);
+  window.DateFacts = { lookupDate: voiceLookupDate, personContext: voicePersonContext, prefetch: prefetchSelected };
 })();
 </script>
 
@@ -657,11 +693,16 @@
       conversation = await Conversation.startSession({
         agentId: AGENT_ID,
         connectionType: 'websocket',
+        onUnhandledClientToolCall: (call) => {
+          const name = call && (call.tool_name || call.toolName || call.name) || 'unknown';
+          console.warn('Unhandled client tool', call);
+          setStatus(`The agent asked for a tool named "${name}", which this page doesn't have. Check the tool name in ElevenLabs.`, true);
+        },
         clientTools: {
           get_births_on_date: async (params) => {
             setStatus('Looking up that date on Wikipedia…');
             const result = await window.DateFacts.lookupDate(params);
-            setStatus(result.startsWith('ERROR') ? 'Lookup failed.' : 'Found results. They are on the page behind this box.');
+            setStatus(result.startsWith('ERROR') ? 'Lookup failed.' : 'Found results. They are shown on the page.');
             return result;
           },
           get_person_context: async (params) => {
@@ -676,9 +717,10 @@
           btn.classList.add('live');
           btn.setAttribute('aria-pressed', 'true');
           label.textContent = 'End conversation';
+          window.__voiceDock && window.__voiceDock(true); // move aside so results stay visible
           setStatus('Listening… ask about any date.');
         },
-        onDisconnect: () => { setIdle(); setStatus('Conversation ended. Click to talk again.'); },
+        onDisconnect: () => { window.__voiceDock && window.__voiceDock(false); setIdle(); setStatus('Conversation ended. Click to talk again.'); },
         onError: (err) => { console.error(err); setStatus('Something went wrong. Please try again.', true); },
         onModeChange: ({ mode }) => {
           const speaking = mode === 'speaking';
@@ -712,12 +754,23 @@
   btn.addEventListener('click', () => (conversation ? stop() : start()));
   const panel = document.getElementById('voicePanel');
   const closeBtn = document.getElementById('voiceClose');
-  const openPanel = () => { if (!panel.open) panel.showModal(); iconBtn && iconBtn.setAttribute('aria-expanded', 'true'); };
+  let skipClose = 0; // close events caused by re-docking, not by the visitor
+  const dock = (on) => {
+    if (!panel.open || panel.classList.contains('docked') === on) return;
+    skipClose++;
+    panel.close();
+    panel.classList.toggle('docked', on);
+    on ? panel.show() : panel.showModal();
+  };
+  window.__voiceDock = dock;
+  const openPanel = () => { window.DateFacts && window.DateFacts.prefetch(); if (!panel.open) panel.showModal(); iconBtn && iconBtn.setAttribute('aria-expanded', 'true'); };
   const closePanel = () => { if (panel.open) panel.close(); };
   if (iconBtn) iconBtn.addEventListener('click', openPanel);
   closeBtn.addEventListener('click', closePanel);
   panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(); }); // click outside the box
   panel.addEventListener('close', () => {
+    if (skipClose > 0) { skipClose--; if (panel.open) return; }
+    panel.classList.remove('docked');
     iconBtn && iconBtn.setAttribute('aria-expanded', 'false');
     if (conversation) stop(); // closing the pop-up ends the conversation
   });
