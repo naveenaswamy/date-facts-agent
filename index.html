@@ -122,12 +122,8 @@
     @media(max-width:620px){.shell{width:min(100% - 20px,1180px);padding-top:16px}.topbar{margin-bottom:20px}.source-pill{display:none}.hero-card{padding:28px;min-height:auto;border-radius:26px}h1{font-size:48px}.input-card{border-radius:24px}.grid2,.people-grid,.ask{grid-template-columns:1fr}.section-head{align-items:start;flex-direction:column}.section-sub{text-align:left}.panel{padding:18px}.ask button{width:100%}}
     /* Voice guide (ElevenLabs), inside the Explore card */
     .voice-modal{width:min(420px,calc(100% - 32px));border:0;border-radius:30px;padding:36px 30px 28px;text-align:center;color:var(--ink);background:var(--paper);box-shadow:0 30px 80px rgba(40,55,55,.25)}
-    .voice-modal.docked{position:fixed;inset:auto 20px 20px auto;margin:0;width:min(340px,calc(100% - 32px));padding:18px 18px 16px;border-radius:24px;z-index:1000;box-shadow:0 18px 50px rgba(40,55,55,.22);animation:none}
-    .voice-modal.docked .voice-hero{width:48px;height:48px;padding:5px;margin-bottom:8px}
-    .voice-modal.docked h3{font-size:19px}
-    .voice-modal.docked p{display:none}
-    .voice-modal.docked .voice-close{top:10px;right:10px;width:30px;height:30px;font-size:18px}
-    .voice-modal::backdrop{background:rgba(47,58,61,.35);backdrop-filter:blur(4px)}
+    .voice-modal::backdrop{background:rgba(47,58,61,.35);backdrop-filter:blur(4px);transition:background .3s ease}
+    .voice-modal.in-call::backdrop{background:rgba(47,58,61,.12);backdrop-filter:none}
     .voice-modal[open]{animation:voicepop .25s ease-out}
     .voice-modal[open]::backdrop{animation:voicefade .25s ease-out}
     @keyframes voicepop{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
@@ -606,12 +602,29 @@
   }
   const withDeadline = (promise, ms, fallback) => Promise.race([promise, new Promise(res => setTimeout(() => res(fallback), ms))]);
   const TOOL_BUDGET_MS = 12000;
+  // The voice agent gives up on slow tools, so every tool call answers within QUICK_REPLY_MS.
+  // If Wikipedia is still loading, the lookup keeps running in the background and the agent is
+  // told to say a short filler and call the tool again; the second call returns the finished result.
+  const QUICK_REPLY_MS = 8000; // must stay below the tool's response_timeout_secs (20) in ElevenLabs
+  const STILL_LOADING = 'STILL_LOADING: Wikipedia is still sending this data. Say one short filler such as "One moment, I\'m checking Wikipedia," then call this same tool again with exactly the same parameters. Do not guess.';
+  const toolJobs = new Map();
+  function quickTool(key, makeJob){
+    let job = toolJobs.get(key);
+    if(!job){
+      job = withDeadline(makeJob(), TOOL_BUDGET_MS, 'ERROR: Wikipedia did not respond in time. Apologize briefly and offer to try again. Do not guess.');
+      toolJobs.set(key, job);
+      job.then(r => { if(String(r).startsWith('ERROR')) toolJobs.delete(key); else setTimeout(()=>toolJobs.delete(key), 5*60*1000); });
+    }
+    return withDeadline(job, QUICK_REPLY_MS, STILL_LOADING);
+  }
   async function voiceLookupDate(params={}){
-    return withDeadline(lookupDateInner(params), TOOL_BUDGET_MS,
-      'ERROR: Wikipedia is responding slowly right now. Tell the visitor you are still loading and ask them to repeat the date in a moment, or use the Find people & history button. Do not guess names.');
+    const key = `date:${parseMonth(params.month)}/${String(params.day ?? '').trim().toLowerCase()}/${String(params.year ?? '').trim()}`;
+    return quickTool(key, () => lookupDateInner(params));
   }
   async function lookupDateInner(params={}){
-    const m = parseMonth(params.month), d = parseInt(params.day,10);
+    const words = {first:1,second:2,third:3,fourth:4,fifth:5,sixth:6,seventh:7,eighth:8,ninth:9,tenth:10,eleventh:11,twelfth:12,thirteenth:13,fourteenth:14,fifteenth:15,sixteenth:16,seventeenth:17,eighteenth:18,nineteenth:19,twentieth:20,'twenty-first':21,'twenty-second':22,'twenty-third':23,'twenty-fourth':24,'twenty-fifth':25,'twenty-sixth':26,'twenty-seventh':27,'twenty-eighth':28,'twenty-ninth':29,thirtieth:30,'thirty-first':31};
+    const dayRaw = String(params.day ?? '').trim().toLowerCase().replace(/\s+/g,'-');
+    const m = parseMonth(params.month), d = parseInt(dayRaw,10) || words[dayRaw] || 0;
     if(!m || !d) return 'ERROR: I need a month (1-12 or a name) and a day number.';
     const max = new Date(2024,m,0).getDate();
     if(d<1 || d>max) return `ERROR: ${monthNames[m-1]} has only ${max} days.`;
@@ -627,8 +640,8 @@
     return `People born on ${monthNames[m-1]} ${d}, from the live Wikipedia feed (these are now shown on the page):\n${lines.join('\n')}\nUse ONLY these facts. For birthplace and history of someone, call get_person_context with their name.`;
   }
   async function voicePersonContext(params={}){
-    return withDeadline(personContextInner(params), TOOL_BUDGET_MS,
-      'ERROR: The birthplace lookup is taking too long. Offer the visitor the short facts you already have, and suggest the Explore context button on the page. Do not invent details.');
+    const key = `person:${String(params.name ?? '').trim().toLowerCase()}`;
+    return quickTool(key, () => personContextInner(params));
   }
   async function personContextInner(params={}){
     const name = String(params.name||'').trim();
@@ -647,6 +660,7 @@
   monthEl.addEventListener('change', prefetchSelected);
   dayEl.addEventListener('change', prefetchSelected);
   window.DateFacts = { lookupDate: voiceLookupDate, personContext: voicePersonContext, prefetch: prefetchSelected };
+  prefetchSelected();
 })();
 </script>
 
@@ -701,14 +715,16 @@
         clientTools: {
           get_births_on_date: async (params) => {
             setStatus('Looking up that date on Wikipedia…');
+            const t0 = performance.now();
             const result = await window.DateFacts.lookupDate(params);
-            setStatus(result.startsWith('ERROR') ? 'Lookup failed.' : 'Found results. They are shown on the page.');
+            console.info('[DateGuide] get_births_on_date', params, `${Math.round(performance.now() - t0)} ms`);
+            setStatus(result.startsWith('ERROR') ? 'Lookup failed.' : result.startsWith('STILL_LOADING') ? 'Still loading from Wikipedia…' : 'Found results. They are shown on the page.');
             return result;
           },
           get_person_context: async (params) => {
             setStatus(`Looking up ${params && params.name ? params.name : 'that person'}…`);
             const result = await window.DateFacts.personContext(params);
-            setStatus('Context retrieved.');
+            setStatus(result.startsWith('ERROR') ? 'Lookup failed.' : result.startsWith('STILL_LOADING') ? 'Still loading from Wikipedia…' : 'Context found. It is shown on the page.');
             return result;
           },
         },
@@ -754,23 +770,15 @@
   btn.addEventListener('click', () => (conversation ? stop() : start()));
   const panel = document.getElementById('voicePanel');
   const closeBtn = document.getElementById('voiceClose');
-  let skipClose = 0; // close events caused by re-docking, not by the visitor
-  const dock = (on) => {
-    if (!panel.open || panel.classList.contains('docked') === on) return;
-    skipClose++;
-    panel.close();
-    panel.classList.toggle('docked', on);
-    on ? panel.show() : panel.showModal();
-  };
-  window.__voiceDock = dock;
+  // During a call the pop-up stays centered; the backdrop just gets lighter and unblurred so results show around it.
+  window.__voiceDock = (on) => panel.classList.toggle('in-call', on);
   const openPanel = () => { window.DateFacts && window.DateFacts.prefetch(); if (!panel.open) panel.showModal(); iconBtn && iconBtn.setAttribute('aria-expanded', 'true'); };
   const closePanel = () => { if (panel.open) panel.close(); };
   if (iconBtn) iconBtn.addEventListener('click', openPanel);
   closeBtn.addEventListener('click', closePanel);
   panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(); }); // click outside the box
   panel.addEventListener('close', () => {
-    if (skipClose > 0) { skipClose--; if (panel.open) return; }
-    panel.classList.remove('docked');
+    panel.classList.remove('in-call');
     iconBtn && iconBtn.setAttribute('aria-expanded', 'false');
     if (conversation) stop(); // closing the pop-up ends the conversation
   });
