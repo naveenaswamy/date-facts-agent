@@ -777,7 +777,7 @@
           setStatus('Listening… ask about any date.');
         },
         onDisconnect: () => { window.__voiceDock && window.__voiceDock(false); setIdle(); setStatus('Conversation ended. Click to talk again.'); },
-        onError: (err) => { console.error(err); setStatus('Something went wrong. Please try again.', true); },
+        onError: (message, context) => { console.error('[DateGuide] ElevenLabs error:', message, context); setStatus(`ElevenLabs error: ${typeof message === 'string' ? message : (message && message.message) || 'unknown'}`, true); },
         onModeChange: ({ mode }) => {
           const speaking = mode === 'speaking';
           btn.classList.toggle('speaking', speaking);
@@ -792,10 +792,14 @@
     } catch (err) {
       console.error(err);
       setIdle();
-      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
-      setStatus(denied
-        ? 'Microphone access is blocked. Allow it in your browser settings and try again.'
-        : 'Could not start the conversation. Please try again.', true);
+      const name = err && err.name, msg = (err && (err.message || err.reason || String(err))) || 'unknown error';
+      const reasons = {
+        NotAllowedError: 'Microphone access is blocked. Click the lock icon in the address bar, allow the microphone, and try again.',
+        SecurityError: 'Microphone access is blocked. Click the lock icon in the address bar, allow the microphone, and try again.',
+        NotFoundError: 'No microphone was found. Connect or enable a microphone and try again.',
+        NotReadableError: 'The microphone is in use by another app or browser tab. Close it there and try again.',
+      };
+      setStatus(reasons[name] || `Could not start the conversation: ${msg}`, true);
     }
   }
 
